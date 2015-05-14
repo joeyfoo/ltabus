@@ -1,15 +1,18 @@
 <?php
 
+//Get bus stop number input
 if (isset($_GET["id"]) && is_numeric($_GET["id"])) {
 	$id = $_GET["id"];
 } else {
 	$id = "07379";
 }
 
-$url = "http://datamall2.mytransport.sg/ltaodataservice/BusArrival?BusStopID=$id";
-
+//Set up source URLs
 $creds = parse_ini_file(".creds.ini");
+$url = "http://datamall2.mytransport.sg/ltaodataservice/BusArrival?BusStopID=$id";
+$busstops = file_get_contents("bus-stops.json");
 
+//Get bus arrival info
 $ch = curl_init();
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_URL,$url);
@@ -21,9 +24,11 @@ curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 $result=curl_exec($ch);
 curl_close($ch);
 
+//Decode bus arrival results
 $j = json_decode($result, true);
 if (isset($j["odata.error"])) { die ($j["odata.error"]["message"]["value"]); }
 
+//Sorting by arrival time
 function my_sort($a, $b) {
     if ($a["NextBus"]["EstimatedArrival"] < $b["NextBus"]["EstimatedArrival"]) {
         return -1;
@@ -36,6 +41,22 @@ function my_sort($a, $b) {
 
 usort($j["Services"], 'my_sort');
 
+//Parse and get bus stop information
+function get_stop_name($number, $data) {
+    
+    $stops = json_decode($data);
+    
+    foreach ($stops->features as $stop) {
+        if ($number == $stop->properties->BUS_STOP_N)
+        {
+            return $stop->properties->LOC_DESC;
+        }
+    }
+    
+    return '(Bus stop)';
+}
+
+$name = get_stop_name($id, $busstops)
 ?>
 <!DOCTYPE html>
 <html>
@@ -56,10 +77,19 @@ ul#buses li:before {
   left: -2em;
   top: -1em;
 }
+    
+#busstopname {
+    margin-left: 36px;
+}
+.wab:after {
+    content: " \267F";
+    color: #00F;
+}
 </style>
 </head>
 <body>
 <h1 id=busstopid><?php echo $j["BusStopID"]; ?></h1>
+<h2 id="busstopname"><?php echo $name; ?></h2>
 <ul id=buses>
 <?php
 
@@ -80,8 +110,14 @@ function tmark($s) {
 		$color = "black";
 		break;
 	}
-
-	return '<time style="color: ' . $color . '" dateTime="' . $s["EstimatedArrival"] . '">' . $s["EstimatedArrival"] . '</time>';
+    
+    $details = "";
+    
+    if ($s["Feature"] == "WAB") {
+        $details = "wab";
+    }
+    
+	return '<time class="' . $details . '" style="color: ' . $color . '" dateTime="' . $s["EstimatedArrival"] . '">' . $s["EstimatedArrival"] . '</time>';
 }
 
 foreach ($j["Services"] as $service) {
